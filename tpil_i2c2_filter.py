@@ -2,7 +2,7 @@ import numpy as np
 import nibabel as nib
 import argparse
 from scipy.ndimage import label
-from calculate_i2c2_cluster import compute_i2c2
+from tpil_calculate_i2c2_cluster import compute_i2c2
 
 
 def main():
@@ -16,12 +16,17 @@ def main():
                         help="Text file with visit IDs (one per scan)")
     parser.add_argument("--subject_file", required=True,
                         help="Text file with subject IDs (one per scan)")
+    parser.add_argument("--output_file", required=True,
+                        help="Path to output NIfTI file for retained clusters")
     parser.add_argument("--stat_threshold", type=float, default=2.0,
                         help="Threshold for statistics map (default: 2.0)")
     parser.add_argument("--size_threshold", type=int, default=50,
                         help="Minimum cluster size (default: 50 voxels)")
     parser.add_argument("--i2c2_threshold", type=float, default=0.7,
                         help="Minimum I2C2 value for cluster (default: 0.7)")
+    parser.add_argument("--one_way", action="store_true",
+                        help="Use one-way thresholding (stat >= threshold only). Default is two-way (stat >= threshold or stat <= -threshold).")
+
     args = parser.parse_args()
 
     # Load maps and info
@@ -32,10 +37,21 @@ def main():
     subjects = np.loadtxt(args.subject_file, dtype=str)
     visits = np.loadtxt(args.visit_file, dtype=str)
 
+    print("size of data_4d:", data_4d.shape)
+    print("size of visits:", visits.shape)
+    print("size of subjects:", subjects.shape)
+
     # Threshold statistics map
-    mask = stat_data >= args.stat_threshold
+    if args.one_way:
+        mask = stat_data >= args.stat_threshold
+        print(f"Using one-way threshold: stat >= {args.stat_threshold}")
+    else:
+        mask = (stat_data >= args.stat_threshold) | (
+            stat_data <= -args.stat_threshold)
+        print(
+            f"Using two-way threshold: stat >= {args.stat_threshold} or stat <= {-args.stat_threshold}")
     labeled, n_clusters = label(mask)
-    print(f"Found {n_clusters} clusters above threshold {args.stat_threshold}")
+    print(f"Found {n_clusters} clusters passing thresholding")
 
     # Prepare output
     results = []
@@ -56,6 +72,7 @@ def main():
                                     and all(np.sum((subjects == subj) & (visits == v)) == 1 for v in unique_visits)]
         n_subjects = len(subjects_with_all_visits)
         n_visits = len(unique_visits)
+
         # Build subject x visit x voxel array
         data_matrix = np.full((n_subjects, n_visits, n_voxels), np.nan)
         for i, subj in enumerate(subjects_with_all_visits):
@@ -63,6 +80,7 @@ def main():
                 idx = np.where((subjects == subj) & (visits == visit))[0]
                 if len(idx) == 1:
                     data_matrix[i, j, :] = data_roi[:, idx[0]]
+
         # Compute I2C2
         i2c2 = compute_i2c2(
             data_matrix, subjects_with_all_visits, unique_visits)
@@ -73,10 +91,32 @@ def main():
             'size': cluster_size,
             'i2c2': i2c2
         })
-        print(f"Cluster {cluster_idx}: size={cluster_size}, I2C2={i2c2:.4f}")
+        avg_stat = np.mean(stat_data[cluster_mask])
+        results[-1]['avg_stat'] = avg_stat
+        print(
+            f"Cluster {cluster_idx}: size={cluster_size}, I2C2={i2c2:.4f}, avg_stat={avg_stat:.4f} - kept")
 
     print(f"Kept {len(results)} clusters passing all thresholds.")
-    # Optionally, save cluster masks or results here
+    # Create output map: clusters that pass filtering, voxel values = label ID
+    output_map = np.zeros(stat_data.shape, dtype=np.int32)
+    for r in results:
+        output_map[labeled == r['cluster_index']] = r['cluster_index']
+    out_img = nib.Nifti1Image(output_map, stat_img.affine, stat_img.header)
+    nib.save(out_img, args.output_file)
+    print(f"Output map written to {args.output_file}")
+
+    # Also write cluster info to CSV (same path with .csv extension)
+    import csv
+    csv_path = args.output_file
+    if csv_path.endswith('.nii') or csv_path.endswith('.nii.gz'):
+        csv_path = csv_path.replace('.nii.gz', '.csv').replace('.nii', '.csv')
+    with open(csv_path, "w", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=[
+                                "cluster_index", "size", "i2c2", "avg_stat"])
+        writer.writeheader()
+        for row in results:
+            writer.writerow(row)
+    print(f"Cluster info written to {csv_path}")
 
 
 if __name__ == "__main__":
