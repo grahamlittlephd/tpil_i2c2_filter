@@ -8,14 +8,14 @@ from tpil_calculate_i2c2 import compute_i2c2
 def main():
     parser = argparse.ArgumentParser(
         description="Threshold and filter clusters by size and I2C2.")
-    parser.add_argument("--stat_map", required=True,
-                        help="Path to group difference/statistics map (NIfTI)")
     parser.add_argument("--nifti_4d", required=True,
                         help="Path to 4D NIfTI file (scans in 4th dimension)")
     parser.add_argument("--visit_file", required=True,
                         help="Text file with visit IDs (one per scan)")
     parser.add_argument("--subject_file", required=True,
                         help="Text file with subject IDs (one per scan)")
+    parser.add_argument("--group_file", required=True,
+                        help="Text file with group labels (one per scan, e.g. clbp/con)")
     parser.add_argument("--output_file", required=True,
                         help="Path to output NIfTI file for retained clusters")
     parser.add_argument("--stat_threshold", type=float, default=2.0,
@@ -26,32 +26,50 @@ def main():
                         help="Minimum I2C2 value for cluster (default: 0.7)")
     parser.add_argument("--one_way", action="store_true",
                         help="Use one-way thresholding (stat >= threshold only). Default is two-way (stat >= threshold or stat <= -threshold).")
+    parser.add_argument("--stat_map", required=False,
+                        help="Path to group difference/statistics map (NIfTI). If not provided, will be calculated from 4D NIfTI and group file.")
+    parser.add_argument("--mask", required=False,
+                        help="Optional NIfTI mask file. Only voxels within mask > 0 are analyzed.")
 
     args = parser.parse_args()
 
     # Load maps and info
-    stat_img = nib.load(args.stat_map)
-    stat_data = stat_img.get_fdata()
+    import nibabel as nib
     img_4d = nib.load(args.nifti_4d)
     data_4d = img_4d.get_fdata()
     subjects = np.loadtxt(args.subject_file, dtype=str)
     visits = np.loadtxt(args.visit_file, dtype=str)
+    stat_img = None
+    if args.stat_map:
+        stat_img = nib.load(args.stat_map)
+        stat_data = stat_img.get_fdata()
+    else:
+        groups = np.loadtxt(args.group_file, dtype=str)
+        from tpil_calculate_tstat import calculate_tstat
+        stat_data, _ = calculate_tstat(data_4d, subjects, groups)
+        stat_img = nib.Nifti1Image(stat_data, img_4d.affine, img_4d.header)
+        print("Calculated t-statistic map from 4D NIfTI and group file.")
 
-    print("size of data_4d:", data_4d.shape)
-    print("size of visits:", visits.shape)
-    print("size of subjects:", subjects.shape)
+    # Apply mask if provided
+    mask = None
+    if args.mask:
+        mask_img = nib.load(args.mask)
+        mask = mask_img.get_fdata() > 0
+        print(f"Loaded mask from {args.mask}")
+        stat_data = np.where(mask, stat_data, 0)
 
     # Threshold statistics map
     if args.one_way:
-        mask = stat_data >= args.stat_threshold
+        stat_mask = stat_data >= args.stat_threshold
         print(f"Using one-way threshold: stat >= {args.stat_threshold}")
     else:
-        mask = (stat_data >= args.stat_threshold) | (
+        stat_mask = (stat_data >= args.stat_threshold) | (
             stat_data <= -args.stat_threshold)
         print(
             f"Using two-way threshold: stat >= {args.stat_threshold} or stat <= {-args.stat_threshold}")
-    labeled, n_clusters = label(mask)
-    print(f"Found {n_clusters} clusters passing thresholding")
+    labeled, n_clusters = label(stat_mask)
+    print(
+        f"Found {n_clusters} clusters passing statistics threshold prior to filtering.")
 
     # Prepare output
     results = []
@@ -64,9 +82,11 @@ def main():
         data_roi = data_4d[cluster_mask]  # shape: (n_voxels, n_scans)
         n_voxels = data_roi.shape[0]
         n_scans = data_roi.shape[1]
+
         # Get unique subjects and visits
         unique_subjects = np.unique(subjects)
         unique_visits = np.unique(visits)
+        
         # Find subjects with all visits
         subjects_with_all_visits = [subj for subj in unique_subjects if np.sum((subjects == subj)) == len(unique_visits)
                                     and all(np.sum((subjects == subj) & (visits == v)) == 1 for v in unique_visits)]
