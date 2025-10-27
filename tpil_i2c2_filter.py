@@ -2,7 +2,7 @@ import numpy as np
 import nibabel as nib
 import argparse
 from scipy.ndimage import label
-from tpil_calculate_i2c2_cluster import compute_i2c2
+from tpil_calculate_i2c2 import compute_i2c2
 
 
 def main():
