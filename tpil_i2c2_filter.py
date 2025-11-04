@@ -6,6 +6,31 @@ from tpil_calculate_i2c2 import compute_i2c2
 
 
 def main():
+    import os
+    # Check required files exist and are correct type
+
+    def assert_file_exists(path, desc):
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"{desc} file not found: {path}")
+
+    def assert_nifti_file(path, desc):
+        assert_file_exists(path, desc)
+        if not (path.endswith('.nii') or path.endswith('.nii.gz')):
+            raise ValueError(
+                f"{desc} must be a NIfTI file (.nii or .nii.gz): {path}")
+
+    assert_nifti_file(args.nifti_4d, "4D NIfTI input")
+    assert_file_exists(args.visit_file, "Visit list")
+    assert_file_exists(args.subject_file, "Subject list")
+    assert_file_exists(args.group_file, "Group list")
+    if args.stat_map:
+        assert_nifti_file(args.stat_map, "Stat map")
+    if args.mask:
+        assert_nifti_file(args.mask, "Mask")
+    # Output file extension check
+    if not (args.output_file.endswith('.nii') or args.output_file.endswith('.nii.gz')):
+        raise ValueError(
+            f"Output file must be a NIfTI file (.nii or .nii.gz): {args.output_file}")
     parser = argparse.ArgumentParser(
         description="Threshold and filter clusters by size and I2C2.")
     parser.add_argument("--nifti_4d", required=True,
@@ -86,7 +111,7 @@ def main():
         # Get unique subjects and visits
         unique_subjects = np.unique(subjects)
         unique_visits = np.unique(visits)
-        
+
         # Find subjects with all visits
         subjects_with_all_visits = [subj for subj in unique_subjects if np.sum((subjects == subj)) == len(unique_visits)
                                     and all(np.sum((subjects == subj) & (visits == v)) == 1 for v in unique_visits)]
