@@ -131,6 +131,7 @@ def main():
         # Find unique subjects and visits
         unique_subjects = np.unique(subjects)
         unique_visits = np.unique(visits)
+
         # Build subject x visit x voxel array
         subj_visit_matrix = np.full(
             (len(unique_subjects), len(unique_visits), n_voxels), np.nan)

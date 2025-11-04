@@ -2,6 +2,19 @@ import numpy as np
 import nibabel as nib
 import pandas as pd
 import argparse
+import os
+
+
+def assert_file_exists(path, desc):
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"{desc} file not found: {path}")
+
+
+def assert_nifti_file(path, desc):
+    assert_file_exists(path, desc)
+    if not (path.endswith('.nii') or path.endswith('.nii.gz')):
+        raise ValueError(
+            f"{desc} must be a NIfTI file (.nii or .nii.gz): {path}")
 
 
 def compute_i2c2(data, subjects, visits):
@@ -46,6 +59,14 @@ def main():
     parser.add_argument("--group_file", required=False,
                         help="Text file with group labels (optional)")
     args = parser.parse_args()
+
+    # Validate input files
+    assert_nifti_file(args.nifti_file, "4D NIfTI input")
+    assert_nifti_file(args.roi_mask, "ROI mask")
+    assert_file_exists(args.subject_file, "Subject list")
+    assert_file_exists(args.visit_file, "Visit list")
+    if args.group_file:
+        assert_file_exists(args.group_file, "Group list")
 
     # Load data
     img = nib.load(args.nifti_file)

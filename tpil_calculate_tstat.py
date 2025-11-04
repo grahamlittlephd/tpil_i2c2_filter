@@ -1,7 +1,20 @@
 import numpy as np
-from scipy.stats import ttest_ind
-import argparse
 import nibabel as nib
+import argparse
+from scipy.stats import ttest_ind
+import os
+
+
+def assert_file_exists(path, desc):
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"{desc} file not found: {path}")
+
+
+def assert_nifti_file(path, desc):
+    assert_file_exists(path, desc)
+    if not (path.endswith('.nii') or path.endswith('.nii.gz')):
+        raise ValueError(
+            f"{desc} must be a NIfTI file (.nii or .nii.gz): {path}")
 
 
 def calculate_tstat(data_4d, subjects, groups):
@@ -60,6 +73,19 @@ def main():
                         help="Optional NIfTI mask file. Only voxels within mask > 0 are analyzed.")
     args = parser.parse_args()
 
+    # Validate input files
+    assert_nifti_file(args.nifti_4d, "4D NIfTI input")
+    assert_file_exists(args.subject_file, "Subject list")
+    assert_file_exists(args.group_file, "Group list")
+    if args.mask:
+        assert_nifti_file(args.mask, "Mask")
+    if not (args.output_tstat.endswith('.nii') or args.output_tstat.endswith('.nii.gz')):
+        raise ValueError(
+            f"Output tstat file must be a NIfTI file (.nii or .nii.gz): {args.output_tstat}")
+    if not (args.output_pval.endswith('.nii') or args.output_pval.endswith('.nii.gz')):
+        raise ValueError(
+            f"Output pval file must be a NIfTI file (.nii or .nii.gz): {args.output_pval}")
+
     img_4d = nib.load(args.nifti_4d)
     data_4d = img_4d.get_fdata()
     subjects = np.loadtxt(args.subject_file, dtype=str)
@@ -69,7 +95,7 @@ def main():
         mask_img = nib.load(args.mask)
         mask = mask_img.get_fdata() > 0
         print(f"Loaded mask from {args.mask}")
-        
+
     tstat_map, pval_map = calculate_tstat(data_4d, subjects, groups)
 
     # Apply mask if provided
