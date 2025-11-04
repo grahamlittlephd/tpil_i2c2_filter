@@ -1,3 +1,4 @@
+from tpil_calculate_tstat import calculate_tstat
 import numpy as np
 import nibabel as nib
 import argparse
@@ -89,16 +90,8 @@ def main():
         stat_img = nib.load(args.stat_map)
         stat_data = stat_img.get_fdata()
     else:
-        # Compute mean difference between groups (simple t-like stat)
-        group_labels = np.unique(groups)
-        if len(group_labels) != 2:
-            raise ValueError(
-                "Exactly two groups required to compute stat map.")
-        group1_idx = np.where(groups == group_labels[0])[0]
-        group2_idx = np.where(groups == group_labels[1])[0]
-        mean1 = np.nanmean(data_4d[..., group1_idx], axis=3)
-        mean2 = np.nanmean(data_4d[..., group2_idx], axis=3)
-        stat_data = mean1 - mean2
+        # Use calculate_tstat from tpil_calculate_tstat
+        stat_data, _ = calculate_tstat(data_4d, subjects, groups)
         stat_img = nib.Nifti1Image(stat_data, img_4d.affine, img_4d.header)
 
     # Threshold stat map

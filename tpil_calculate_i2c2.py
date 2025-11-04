@@ -24,10 +24,10 @@ def compute_i2c2(data, subjects, visits):
     """
     n_subjects, n_visits, n_voxels = data.shape
 
-    # Subject means (n_subjects x n_voxels)
+    # Subject means (n_subjects x n_voxels) (average for each subject across visits)
     subj_means = np.nanmean(data, axis=1)
 
-    # Grand mean (1 x n_voxels)
+    # Grand mean (1 x n_voxels) (average across all subjects and visits)
     grand_mean = np.nanmean(subj_means, axis=0)
 
     # Between-subject sum of squares (variance of subject means)

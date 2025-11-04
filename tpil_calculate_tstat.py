@@ -43,6 +43,11 @@ def calculate_tstat(data_4d, subjects, groups):
     groupA, groupB = unique_groups
     groupA_idx = np.where(subject_group_labels == groupA)[0]
     groupB_idx = np.where(subject_group_labels == groupB)[0]
+    # Robustness: require at least 2 subjects per group for t-test
+    if len(groupA_idx) < 2 or len(groupB_idx) < 2:
+        shape = subject_averages.shape[:-1]
+        nan_map = np.full(shape, np.nan)
+        return nan_map, nan_map
     groupA_data = subject_averages[..., groupA_idx]
     groupB_data = subject_averages[..., groupB_idx]
     shape = subject_averages.shape[:-1]
@@ -52,7 +57,10 @@ def calculate_tstat(data_4d, subjects, groups):
         groupA_flat, groupB_flat, axis=0, nan_policy='omit')
     tstat_map = tvals.reshape(shape)
     pval_map = pvals.reshape(shape)
-
+    # If all values are nan (e.g., due to degenerate data), set to nan
+    if np.all(np.isnan(tstat_map)):
+        tstat_map[:] = np.nan
+        pval_map[:] = np.nan
     return tstat_map, pval_map
 
 
